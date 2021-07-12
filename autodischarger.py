@@ -9,12 +9,17 @@ import signal
 import sys
 from datetime import date as D
 
-MIN_CPU=8
-MAX_CPU=85
+BOINC_XML = "/Library/Application Support/BOINC Data/global_prefs_override.xml"
+BOINC_PASS = os.popen("cat '/Library/Application Support/BOINC Data/gui_rpc_auth.cfg'").read()
+BOINC_CMD = "env boinccmd --host localhost --passwd '" + BOINC_PASS + "'"
 
-BOINC_XML="/Library/Application Support/BOINC Data/global_prefs_override.xml"
-BOINC_PASS=os.popen("cat '/Library/Application Support/BOINC Data/gui_rpc_auth.cfg'").read()
-BOINC_CMD="env boinccmd --host localhost --passwd '" + BOINC_PASS + "'"
+def set_high():
+    set_params(cpu=45, time_range=TimeRange(7, 30, 22, 30))
+
+
+def set_low():
+    set_params(cpu=10, time_range=TimeRange(3, 59, 4, 00))
+
 
 def send_notification(message):
     os.system("terminal-notifier -title 'BOINC Auto discharger' -message '%s'" % (message))
@@ -27,7 +32,8 @@ class State(Enum):
 
     def next(self, percent, charging):
         state = None
-        if (self is State.DISCHARGING and percent <= 20) or (self is State.CHARGING and not charging):
+        if (self is State.DISCHARGING and percent <= 20) or \
+                (self is State.CHARGING and not charging):
             state = State.MUST_CHARGE
         elif (self is State.CHARGING and percent >= 90) or (self is State.DISCHARGING and charging):
             state = State.MUST_DISCHARGE
@@ -43,24 +49,23 @@ class State(Enum):
 
     def action(self):
         if self is State.MUST_CHARGE:
-            set_params(cpu=MIN_CPU, time_range=TimeRange(12, 30, 21, 00))
+            set_low()
             send_notification("Connect the charger! BOINC slowed down")
         elif self is State.MUST_DISCHARGE:
             send_notification("Disconnect the charger to speed up BOINC")
         elif self is State.DISCHARGING:
-            set_params(cpu=MAX_CPU, time_range=TimeRange(00, 00, 24, 00))
+            set_high()
         else:
-            set_params(cpu=MIN_CPU, time_range=TimeRange(12, 30, 21, 00))
+            set_low()
 
     def __str__(self):
         if self is State.DISCHARGING:
             return "Discharging, BOINC at full speed"
-        elif self is State.CHARGING:
+        if self is State.CHARGING:
             return "Charging, BOINC at slow speed"
-        elif self is State.MUST_CHARGE:
+        if self is State.MUST_CHARGE:
             return "Waiting for charger, BOINC at slow speed"
-        else:
-            return "Waiting for charger disconnect, BOINC at slow speed"
+        return "Waiting for charger disconnect, BOINC at slow speed"
 
 
 class TimeRange:
@@ -132,7 +137,7 @@ def main():
     while True:
         percent, charging = charge_status()
         count = int(os.popen("system_profiler SPPowerDataType | grep " +
-              "'Cycle Count' | awk '{print $3}'").read())
+                             "'Cycle Count' | awk '{print $3}'").read())
         cycles_remaining = 1000 - count
         care_days = (D(2021, 6, 30) - D.today()).days
 
@@ -150,7 +155,7 @@ def main():
 
         status = status.next(percent, charging)
         time.sleep(10 if len(sys.argv) <= 1 or sys.argv[1] is None else
-                int(sys.argv[1]))
+                   int(sys.argv[1]))
 
 if __name__ == "__main__":
     main()
